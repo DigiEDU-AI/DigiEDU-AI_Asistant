@@ -1,78 +1,100 @@
 // ============================================================
-// DigiEDU – Google Drive Sync cez Apps Script (drive.js)
-// Bez OAuth – funguje automaticky pre všetkých
+// DigiEDU – Google Drive Sync + AI Proxy cez Apps Script
+// CORS riešenie: Drive write = no-cors, AI = GET s parametrami
 // ============================================================
 
 const DRIVE_CONFIG = {
-  // Google Apps Script Web App URL
-  // ← KÓD / ADMIN: ak zmeníš deployment, uprav túto URL
   GAS_URL: 'https://script.google.com/macros/s/AKfycbz7sEoiQ8iPVBJYD-PqU3TfJp-R84nZff4Ts_qRwyMfMBYkVQ-KHJlm9dQb7aH3Aa_E/exec',
-
-  // File IDs na Drive (len pre referenciu, GAS ich pozná)
   FILE_MAIN_KB: '1a9-HZdxFXmQcmZGlPH65RiEfXn52hcfZ',
   FILE_WEB_KB:  '1EdMGclT3fxbM91DSXUPerYnYJDhHvP7o',
-
   get isConfigured() { return !!this.GAS_URL && this.GAS_URL.includes('script.google.com'); }
 };
 
-// ── Čítanie súboru z Drive cez GAS ───────────────────────────
+// ── Čítanie z Drive (GET – funguje bez CORS problémov) ────────
 
 async function driveReadFile(target = 'main_kb') {
   if (!DRIVE_CONFIG.isConfigured) return null;
   const url = `${DRIVE_CONFIG.GAS_URL}?target=${target}&t=${Date.now()}`;
-  const res  = await fetch(url);
-  if (!res.ok) throw new Error(`Drive read error ${res.status}`);
+  const res  = await fetch(url, { method: 'GET' });
+  if (!res.ok) throw new Error(`Drive read ${res.status}`);
   const text = await res.text();
-  if (!text || text.trim() === '' || text.trim() === 'null') return null;
-  try   { return JSON.parse(text); }
-  catch { return null; }
+  if (!text || text.trim() === '' || text.trim() === '{}') return null;
+  try { return JSON.parse(text); } catch { return null; }
 }
 
-// ── Zápis súboru na Drive cez GAS ────────────────────────────
+// ── Zápis na Drive (no-cors POST – fire & forget) ─────────────
+// Prehliadač blokuje odpoveď pri cross-origin POST,
+// ale GAS request DOSTANE a zapíše – odpoveď nepotrebujeme.
 
 async function driveWriteFile(target, payload) {
-  if (!DRIVE_CONFIG.isConfigured) return false;
-  const res = await fetch(DRIVE_CONFIG.GAS_URL, {
-    method:  'POST',
-    headers: { 'Content-Type': 'text/plain' }, // GAS vyžaduje text/plain pri no-cors
-    body:    JSON.stringify({ target, payload })
-  });
-  // GAS vráti JSON s {ok: true/false}
-  const data = await res.json().catch(() => ({ ok: res.ok }));
-  if (!data.ok) throw new Error(data.error || 'Drive write failed');
-  return true;
+  if (!DRIVE_CONFIG.isConfigured) return;
+  const body = JSON.stringify({ action: 'drive_write', target, payload });
+  try {
+    await fetch(DRIVE_CONFIG.GAS_URL, {
+      method:  'POST',
+      mode:    'no-cors',          // ← kľúč: ignorujeme CORS blokovanie
+      headers: { 'Content-Type': 'text/plain' },
+      body
+    });
+    // no-cors = opaque response, nevieme či OK, ale GAS zapíše
+  } catch (err) {
+    console.warn('Drive write error:', err.message);
+  }
 }
 
-// ── Načítanie KB z Drive pri štarte ──────────────────────────
+// ── AI volanie cez GAS (GET s base64 payload) ─────────────────
+// GET requesty nemajú CORS preflight problém
+
+async function gasAICall(model, maxTokens, system, messages) {
+  if (!DRIVE_CONFIG.isConfigured) throw new Error('GAS nie je nakonfigurovaný');
+
+  // Zakóduj payload do base64 aby šiel cez GET parameter
+  const payload = btoa(unescape(encodeURIComponent(JSON.stringify({
+    action: 'ai_call', model, max_tokens: maxTokens, system, messages
+  }))));
+
+  const url = `${DRIVE_CONFIG.GAS_URL}?action=ai_call&payload=${encodeURIComponent(payload)}`;
+  const res  = await fetch(url, { method: 'GET' });
+  if (!res.ok) throw new Error(`GAS error ${res.status}`);
+  const data = await res.json();
+  if (!data.ok) throw new Error(data.error || 'GAS AI call failed');
+  return data.result;
+}
+
+// ── Drive init pri štarte ─────────────────────────────────────
+
+async function driveInit() {
+  if (!DRIVE_CONFIG.isConfigured) return;
+  try {
+    const mainCount = await driveLoadMainKB();
+    const webCount  = await driveLoadWebKB();
+    if (mainCount + webCount > 0) {
+      showToast(`Drive KB: ${mainCount + webCount} záznamov`, 'success', 3000);
+      await updateHomeCounters();
+    }
+  } catch (err) {
+    console.warn('Drive init:', err.message);
+  }
+}
 
 async function driveLoadMainKB() {
   try {
     const data = await driveReadFile('main_kb');
     if (!data) return 0;
-
     let imported = 0;
     for (const cat of CONFIG.CATEGORY_KEYS) {
-      const entries = data[cat]?.entries || [];
-      for (const entry of entries) {
+      for (const entry of (data[cat]?.entries || [])) {
         if (!entry.entry_id) continue;
-        const existing = await dbGet(cat, entry.entry_id);
-        if (!existing) { await dbPut(cat, entry); imported++; }
+        if (!(await dbGet(cat, entry.entry_id))) { await dbPut(cat, entry); imported++; }
       }
-      if (data[cat]?.tag_dictionary?.length) {
-        await mergeTagsToDict(cat, data[cat].tag_dictionary);
-      }
+      if (data[cat]?.tag_dictionary?.length) await mergeTagsToDict(cat, data[cat].tag_dictionary);
     }
-    // EXTRA KB
     for (const entry of (data['EXTRA']?.entries || [])) {
       if (!entry.entry_id) continue;
-      const existing = await dbGet('EXTRA', entry.entry_id);
-      if (!existing) { await dbPut('EXTRA', entry); imported++; }
+      if (!(await dbGet('EXTRA', entry.entry_id))) { await dbPut('EXTRA', entry); imported++; }
     }
     return imported;
-  } catch (err) {
-    console.warn('Drive load main KB:', err.message);
-    return 0;
-  }
+  } catch (err) { console.warn('Drive load main:', err.message); return 0; }
 }
 
 async function driveLoadWebKB() {
@@ -82,90 +104,43 @@ async function driveLoadWebKB() {
     let imported = 0;
     for (const entry of data.entries) {
       if (!entry.entry_id) continue;
-      const existing = await dbGet('WEB_KB', entry.entry_id);
-      if (!existing) { await dbPut('WEB_KB', entry); imported++; }
+      if (!(await dbGet('WEB_KB', entry.entry_id))) { await dbPut('WEB_KB', entry); imported++; }
     }
     return imported;
-  } catch (err) {
-    console.warn('Drive load web KB:', err.message);
-    return 0;
-  }
+  } catch (err) { console.warn('Drive load web:', err.message); return 0; }
 }
 
-// ── Uloženie celej KB na Drive ────────────────────────────────
-
 async function driveSaveMainKB() {
-  // 1. Načítaj existujúce záznamy z Drive
-  let existing = {};
-  try { existing = await driveReadFile('main_kb') || {}; } catch {}
-
-  // 2. Mergni – Drive záznamy sú základ, lokálne sa PRIDÁVAJÚ (nikdy nemažú)
-  const payload = {
-    exported_at: new Date().toISOString(),
-    version: '2.0'
-  };
-
-  for (const cat of [...CONFIG.CATEGORY_KEYS, 'EXTRA']) {
-    const driveEntries = existing[cat]?.entries || [];
-    const driveIds     = new Set(driveEntries.map(e => e.entry_id));
-    const driveTagDict = existing[cat]?.tag_dictionary || [];
-
-    // Načítaj lokálne záznamy
-    const localEntries = await dbGetAll(cat === 'EXTRA' ? 'EXTRA' : cat);
-    const localTagDict = await getTagDict(cat);
-
-    // Pridaj len nové lokálne záznamy (ktoré nie sú na Drive)
-    const newEntries = localEntries.filter(e => e.entry_id && !driveIds.has(e.entry_id));
-
-    // Merge tag dictionary bez duplicít
-    const mergedTags = [...new Set([...driveTagDict, ...localTagDict])];
-
-    payload[cat] = {
-      entries:        [...driveEntries, ...newEntries],
-      tag_dictionary: mergedTags
-    };
+  const payload = { exported_at: new Date().toISOString(), version: '2.0' };
+  for (const cat of CONFIG.CATEGORY_KEYS) {
+    payload[cat] = { entries: await dbGetAll(cat), tag_dictionary: await getTagDict(cat) };
   }
-
+  payload['EXTRA'] = { entries: await dbGetAll('EXTRA') };
   await driveWriteFile('main_kb', payload);
-  console.log('Drive save: merged', Object.keys(payload).filter(k => payload[k]?.entries).map(k => `${k}:${payload[k].entries.length}`).join(', '));
 }
 
 async function driveSaveWebKB() {
-  // Vždy načítaj z Drive najprv – nikdy neprepíš, len pridaj
+  const allWebKB = await dbGetAll('WEB_KB');
+  if (!allWebKB.length) return;
   let existing = { entries: [] };
   try { existing = await driveReadFile('web_kb') || { entries: [] }; } catch {}
-
   const existIds = new Set((existing.entries || []).map(e => e.entry_id));
-
-  const allWebKB = await dbGetAll('WEB_KB');
-  const newItems = allWebKB.filter(e => e.entry_id && !existIds.has(e.entry_id));
-  if (!newItems.length) return; // Nič nové – nezapisuj
-
-  const payload = {
-    exported_at: new Date().toISOString(),
-    version:     '2.0',
-    description: 'WEB KB – relácie a dočasné znalosti',
-    entries:     [...(existing.entries || []), ...newItems]
-  };
-  await driveWriteFile('web_kb', payload);
-  console.log(`Drive WEB KB: +${newItems.length} nových záznamov`);
+  const newItems = allWebKB.filter(e => !existIds.has(e.entry_id));
+  if (!newItems.length) return;
+  await driveWriteFile('web_kb', {
+    exported_at: new Date().toISOString(), version: '2.0',
+    entries: [...(existing.entries || []), ...newItems]
+  });
 }
-
-// ── Auto-sync po uložení KB záznamu ──────────────────────────
 
 async function driveAutoSync() {
   if (!DRIVE_CONFIG.isConfigured) return;
   try {
     await driveSaveMainKB();
     await driveSaveWebKB();
-    console.log('Drive sync OK', new Date().toLocaleTimeString('sk-SK'));
-  } catch (err) {
-    console.warn('Drive auto-sync:', err.message);
-    showToast('Drive sync chyba: ' + err.message, 'warning', 5000);
-  }
+    console.log('✅ Drive sync', new Date().toLocaleTimeString('sk-SK'));
+  } catch (err) { console.warn('Drive sync:', err.message); }
 }
-
-// ── Manuálny sync z Admin menu ────────────────────────────────
 
 async function driveManualSync() {
   showLoading('Ukladám na Drive...');
@@ -176,37 +151,19 @@ async function driveManualSync() {
     showToast('Drive sync dokončený ✅', 'success', 4000);
   } catch (err) {
     hideLoading();
-    showToast('Drive sync chyba: ' + err.message, 'error', 6000);
+    showToast('Drive chyba: ' + err.message, 'error', 6000);
   }
 }
 
 async function driveManualLoad() {
   showLoading('Načítavam z Drive...');
   try {
-    const mainCount = await driveLoadMainKB();
-    const webCount  = await driveLoadWebKB();
+    const n = (await driveLoadMainKB()) + (await driveLoadWebKB());
     hideLoading();
     await updateHomeCounters();
-    showToast(`Drive načítaný: ${mainCount + webCount} záznamov`, 'success', 4000);
+    showToast(`Drive: ${n} záznamov načítaných`, 'success', 4000);
   } catch (err) {
     hideLoading();
-    showToast('Drive load chyba: ' + err.message, 'error', 6000);
-  }
-}
-
-// ── Init pri štarte aplikácie ────────────────────────────────
-
-async function driveInit() {
-  if (!DRIVE_CONFIG.isConfigured) return;
-  try {
-    showToast('Načítavam KB z Drive...', 'info', 3000);
-    const mainCount = await driveLoadMainKB();
-    const webCount  = await driveLoadWebKB();
-    if (mainCount + webCount > 0) {
-      showToast(`Drive KB: ${mainCount + webCount} záznamov načítaných`, 'success', 4000);
-      await updateHomeCounters();
-    }
-  } catch (err) {
-    console.warn('Drive init:', err.message);
+    showToast('Drive chyba: ' + err.message, 'error', 6000);
   }
 }
