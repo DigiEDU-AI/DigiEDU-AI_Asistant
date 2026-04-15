@@ -31,32 +31,33 @@ function calcMaxTokens(limitUsd, estimatedInputTokens) {
   return Math.min(Math.max(maxOut, 100), CONFIG.MAX_TOKENS);
 }
 
-// ── Claude API volanie ────────────────────────────────────────
+// ── AI volanie cez GAS proxy ─────────────────────────────────
+// API kľúč je skrytý v Google Apps Script – nie je v kóde
 
 async function callClaudeAPI(systemPrompt, userMessage, limitUsd) {
-  const estInput   = Math.ceil((systemPrompt.length + userMessage.length) / 3.5);
-  const maxTokens  = limitUsd ? calcMaxTokens(limitUsd, estInput) : CONFIG.MAX_TOKENS;
+  const estInput  = Math.ceil((systemPrompt.length + userMessage.length) / 3.5);
+  const maxTokens = limitUsd ? calcMaxTokens(limitUsd, estInput) : CONFIG.MAX_TOKENS;
 
-  const res = await fetch(CONFIG.API_URL, {
+  const res = await fetch(DRIVE_CONFIG.GAS_URL, {
     method: 'POST',
-    headers: {
-      'Content-Type':  'application/json',
-      'x-api-key':     CONFIG.API_KEY,
-      'anthropic-version': '2023-06-01',
-      'anthropic-dangerous-direct-browser-access': 'true'
-    },
+    headers: { 'Content-Type': 'text/plain' },
     body: JSON.stringify({
+      action:     'ai_call',
       model:      CONFIG.API_MODEL,
       max_tokens: maxTokens,
       system:     systemPrompt,
       messages:   [{ role: 'user', content: userMessage }]
     })
   });
-  if (!res.ok) { const e = await res.text(); throw new Error(`Claude API ${res.status}: ${e}`); }
-  const data  = await res.json();
-  const usage = data.usage || null;
+
+  if (!res.ok) throw new Error(`GAS proxy error ${res.status}`);
+  const data = await res.json();
+  if (!data.ok) throw new Error(data.error || 'GAS AI call failed');
+
+  const result = data.result;
+  const usage  = result.usage || null;
   trackTokens(usage);
-  return { text: data.content[0].text, usage, maxTokens };
+  return { text: result.content[0].text, usage, maxTokens };
 }
 
 // ── GPT API volanie ───────────────────────────────────────────
@@ -208,8 +209,9 @@ Vráť VÝHRADNE JSON v tomto formáte (nič iné):
     });
     return { success: true, data: buildDemoRound1(caseState), usage, maxTokens, demo: true, partial: raw };
   } catch (err) {
-    console.warn('AI nedostupné, demo:', err.message);
-    return { success: true, data: buildDemoRound1(caseState), demo: true, usage: null };
+    console.error('AI Round1 chyba:', err.message);
+    showToast(`AI chyba: ${err.message}`, 'error', 8000);
+    return { success: true, data: buildDemoRound1(caseState), demo: true, usage: null, error: err.message };
   }
 }
 
@@ -262,8 +264,9 @@ ${isManual
     });
     return { success: true, data: buildDemoChat(caseState, newInput, isManual), usage, maxTokens, demo: true };
   } catch (err) {
-    console.warn('Chat AI chyba:', err.message);
-    return { success: true, data: buildDemoChat(caseState, newInput, isManual), demo: true };
+    console.error('Chat AI chyba:', err.message);
+    showToast(`AI chyba: ${err.message}`, 'error', 8000);
+    return { success: true, data: buildDemoChat(caseState, newInput, isManual), demo: true, error: err.message };
   }
 }
 
