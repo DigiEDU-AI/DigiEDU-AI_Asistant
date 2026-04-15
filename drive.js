@@ -95,28 +95,51 @@ async function driveLoadWebKB() {
 // ── Uloženie celej KB na Drive ────────────────────────────────
 
 async function driveSaveMainKB() {
-  const payload = { exported_at: new Date().toISOString(), version: '2.0' };
-  for (const cat of CONFIG.CATEGORY_KEYS) {
-    const entries  = await dbGetAll(cat);
-    const tagDict  = await getTagDict(cat);
-    payload[cat]   = { entries, tag_dictionary: tagDict };
+  // 1. Načítaj existujúce záznamy z Drive
+  let existing = {};
+  try { existing = await driveReadFile('main_kb') || {}; } catch {}
+
+  // 2. Mergni – Drive záznamy sú základ, lokálne sa PRIDÁVAJÚ (nikdy nemažú)
+  const payload = {
+    exported_at: new Date().toISOString(),
+    version: '2.0'
+  };
+
+  for (const cat of [...CONFIG.CATEGORY_KEYS, 'EXTRA']) {
+    const driveEntries = existing[cat]?.entries || [];
+    const driveIds     = new Set(driveEntries.map(e => e.entry_id));
+    const driveTagDict = existing[cat]?.tag_dictionary || [];
+
+    // Načítaj lokálne záznamy
+    const localEntries = await dbGetAll(cat === 'EXTRA' ? 'EXTRA' : cat);
+    const localTagDict = await getTagDict(cat);
+
+    // Pridaj len nové lokálne záznamy (ktoré nie sú na Drive)
+    const newEntries = localEntries.filter(e => e.entry_id && !driveIds.has(e.entry_id));
+
+    // Merge tag dictionary bez duplicít
+    const mergedTags = [...new Set([...driveTagDict, ...localTagDict])];
+
+    payload[cat] = {
+      entries:        [...driveEntries, ...newEntries],
+      tag_dictionary: mergedTags
+    };
   }
-  const extra      = await dbGetAll('EXTRA');
-  payload['EXTRA'] = { entries: extra };
+
   await driveWriteFile('main_kb', payload);
+  console.log('Drive save: merged', Object.keys(payload).filter(k => payload[k]?.entries).map(k => `${k}:${payload[k].entries.length}`).join(', '));
 }
 
 async function driveSaveWebKB() {
-  const allWebKB = await dbGetAll('WEB_KB');
-  if (!allWebKB.length) return;
-
-  // Načítaj existujúce z Drive a merge
+  // Vždy načítaj z Drive najprv – nikdy neprepíš, len pridaj
   let existing = { entries: [] };
   try { existing = await driveReadFile('web_kb') || { entries: [] }; } catch {}
 
-  const existIds  = new Set((existing.entries || []).map(e => e.entry_id));
-  const newItems  = allWebKB.filter(e => !existIds.has(e.entry_id));
-  if (!newItems.length) return;
+  const existIds = new Set((existing.entries || []).map(e => e.entry_id));
+
+  const allWebKB = await dbGetAll('WEB_KB');
+  const newItems = allWebKB.filter(e => e.entry_id && !existIds.has(e.entry_id));
+  if (!newItems.length) return; // Nič nové – nezapisuj
 
   const payload = {
     exported_at: new Date().toISOString(),
@@ -125,6 +148,7 @@ async function driveSaveWebKB() {
     entries:     [...(existing.entries || []), ...newItems]
   };
   await driveWriteFile('web_kb', payload);
+  console.log(`Drive WEB KB: +${newItems.length} nových záznamov`);
 }
 
 // ── Auto-sync po uložení KB záznamu ──────────────────────────
