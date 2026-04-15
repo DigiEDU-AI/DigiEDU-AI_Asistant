@@ -35,15 +35,8 @@ async function initApp() {
   bindUIEvents();
   showScreen('screen-home');
 
-  // Drive sync – načítaj KB zo Drive na pozadí (ak je Client ID nastavený)
-  setTimeout(async () => {
-    try {
-      if (!DRIVE_CONFIG.CLIENT_ID.includes('VLOZ_SEM')) {
-        await driveLoadMainKB();
-        await driveLoadWebKB();
-      }
-    } catch(e) { console.warn('Drive init:', e.message); }
-  }, 1500);
+  // Drive sync – načítaj KB zo Drive automaticky pri štarte
+  setTimeout(driveInit, 1200);
 }
 
 // ── Event bindings ────────────────────────────────────────────
@@ -92,13 +85,25 @@ function bindUIEvents() {
     saveAdminSettings();
     showToast('Nastavenia uložené', 'success');
   });
+  // API test
+  document.getElementById('btn-test-api')?.addEventListener('click', async () => {
+    const resultEl = document.getElementById('api-test-result');
+    if (resultEl) resultEl.textContent = '⏳ Testujem...';
+    try {
+      const sys = 'Odpovedaj iba JSON.';
+      const msg = 'Vráť: {"ok": true}';
+      const { text } = await callAI(sys, msg, 0.002);
+      const parsed = JSON.parse(text.match(/\{[\s\S]*\}/)?.[0] || text);
+      if (resultEl) resultEl.innerHTML = '<span style="color:var(--accent-green)">✅ API funguje – ' + CONFIG.MODEL_LABEL + ' (' + CONFIG.ACTIVE_PROVIDER + ')</span>';
+    } catch (err) {
+      if (resultEl) resultEl.innerHTML = '<span style="color:var(--accent-red)">❌ ' + err.message + '</span>';
+    }
+  });
+
   document.getElementById('btn-drive-sync')?.addEventListener('click', driveManualSync);
   document.getElementById('btn-drive-load')?.addEventListener('click', driveManualLoad);
-  document.getElementById('btn-drive-login')?.addEventListener('click', async () => {
-    try { await driveLogin(); showToast('Drive: prihlásený ✅', 'success'); } catch(e) { showToast(e.message, 'error'); }
-  });
-  document.getElementById('admin-drive-client-id')?.addEventListener('change', e => {
-    DRIVE_CONFIG.CLIENT_ID = e.target.value.trim();
+  document.getElementById('admin-gas-url')?.addEventListener('change', e => {
+    DRIVE_CONFIG.GAS_URL = e.target.value.trim();
   });
   document.getElementById('btn-admin-close')?.addEventListener('click', () => {
     showScreen('screen-home');
