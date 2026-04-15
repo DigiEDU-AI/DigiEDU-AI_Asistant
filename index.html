@@ -234,12 +234,13 @@
       <!-- API kľúče -->
       <div class="admin-section">
         <h3>🔑 API Kľúče</h3>
-        <label>Claude API kľúč</label>
-        <input type="password" id="admin-api-key-claude" placeholder="sk-ant-...">
-        <label style="margin-top:10px;">GPT API kľúč</label>
-        <input type="password" id="admin-api-key-gpt" placeholder="sk-...">
-        <label style="margin-top:10px;">Custom API kľúč</label>
-        <input type="password" id="admin-api-key-custom" placeholder="voliteľné">
+        <div class="admin-gas-info">
+          <div class="admin-gas-badge">🔒 Kľúče sú skryté v Apps Script</div>
+          <p>Claude API kľúč je bezpečne uložený v Google Apps Script – nie je viditeľný v kóde ani v GitHub repozitári.</p>
+          <p style="margin-top:6px;">Na zmenu kľúča: <a href="https://script.google.com" target="_blank" style="color:var(--accent-blue);">script.google.com</a> → projekt DigiEDU_KB_Sync → CLAUDE_KEY</p>
+        </div>
+        <label style="margin-top:14px;">Custom API kľúč (lokálny)</label>
+        <input type="password" id="admin-api-key-custom" placeholder="voliteľné – len pre Custom provider">
         <label style="margin-top:10px;">Custom API endpoint</label>
         <input type="text" id="admin-endpoint-custom" placeholder="http://localhost:11434/api/chat">
       </div>
