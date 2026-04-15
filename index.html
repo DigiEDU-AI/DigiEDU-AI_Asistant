@@ -244,6 +244,15 @@
         <input type="text" id="admin-endpoint-custom" placeholder="http://localhost:11434/api/chat">
       </div>
 
+      <!-- API Test -->
+      <div class="admin-section admin-section-wide">
+        <h3>🧪 Test API pripojenia</h3>
+        <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
+          <button class="btn btn-secondary btn-sm" id="btn-test-api">▶ Otestovať API</button>
+          <span id="api-test-result" style="font-size:13px;color:var(--text-muted);">—</span>
+        </div>
+      </div>
+
       <!-- Limity Haiku -->
       <div class="admin-section">
         <h3>💰 Limity – Haiku ($)</h3>
@@ -282,23 +291,17 @@
 
       <!-- Google Drive Sync -->
       <div class="admin-section admin-section-wide">
-        <h3>☁️ Google Drive Sync</h3>
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
-          <div>
-            <label>OAuth Client ID</label>
-            <input type="text" id="admin-drive-client-id" value="968065008924-b2f9hk85qe9115r9ktpj08l8q5f8q1nb.apps.googleusercontent.com" style="font-size:12px;">
-            <div class="admin-hint">Google Cloud Console → Credentials → OAuth 2.0 Client ID</div>
-          </div>
-          <div>
-            <label>Cieľové súbory (Drive File ID)</label>
-            <div style="font-size:12px;color:var(--text-muted);margin-top:6px;">
-              Hlavná KB: <code style="color:var(--accent-blue)">1a9-HZdxFXmQcmZGlPH65RiEfXn52hcfZ</code><br>
-              WEB KB: <code style="color:var(--accent-green)">1EdMGclT3fxbM91DSXUPerYnYJDhHvP7o</code>
-            </div>
-          </div>
+        <h3>☁️ Google Drive Sync (automatický)</h3>
+        <label>Apps Script URL</label>
+        <input type="text" id="admin-gas-url"
+          value="https://script.google.com/macros/s/AKfycbz7sEoiQ8iPVBJYD-PqU3TfJp-R84nZff4Ts_qRwyMfMBYkVQ-KHJlm9dQb7aH3Aa_E/exec"
+          style="font-size:12px;">
+        <div class="admin-hint">Google Apps Script → Deploy → Web app URL. Funguje automaticky bez loginu.</div>
+        <div style="font-size:12px;color:var(--text-muted);margin-top:8px;">
+          Hlavná KB: <code style="color:var(--accent-blue)">1a9-HZdxFXmQcmZGlPH65RiEfXn52hcfZ</code> &nbsp;|&nbsp;
+          WEB KB: <code style="color:var(--accent-green)">1EdMGclT3fxbM91DSXUPerYnYJDhHvP7o</code>
         </div>
         <div style="display:flex;gap:10px;margin-top:14px;flex-wrap:wrap;">
-          <button class="btn btn-secondary btn-sm" id="btn-drive-login">🔑 Prihlásiť sa do Drive</button>
           <button class="btn btn-secondary btn-sm" id="btn-drive-load">📥 Načítať z Drive</button>
           <button class="btn btn-success btn-sm" id="btn-drive-sync">☁️ Uložiť na Drive</button>
         </div>
