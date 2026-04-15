@@ -28,13 +28,45 @@ async function driveReadFile(target) {
   } catch (e) { console.warn('Drive read:', e.message); return null; }
 }
 
-// ── Zápis na Drive (cez GET + base64) ────────────────────────
+// ── Zápis na Drive (iframe form submit – 100% cross-origin) ──
+// Fetch s no-cors nedostane GAS správne dáta.
+// Form submit cez skrytý iframe funguje vždy bez CORS problémov.
 
-async function driveWriteFile(target, payload) {
+function driveWriteFile(target, payload) {
   if (!DRIVE_CONFIG.isConfigured) return;
   try {
-    const encoded = encodePayload(payload);
-    await fetch(`${DRIVE_CONFIG.GAS_URL}?action=write&target=${target}&data=${encoded}&t=${Date.now()}`);
+    const data = JSON.stringify(payload);
+
+    // Vytvor skrytý iframe ako target
+    let iframe = document.getElementById('_gas_iframe');
+    if (!iframe) {
+      iframe = document.createElement('iframe');
+      iframe.id   = '_gas_iframe';
+      iframe.name = '_gas_iframe';
+      iframe.style.display = 'none';
+      document.body.appendChild(iframe);
+    }
+
+    // Vytvor a odošli form do iframe
+    const form = document.createElement('form');
+    form.method  = 'POST';
+    form.action  = DRIVE_CONFIG.GAS_URL;
+    form.target  = '_gas_iframe';
+    form.style.display = 'none';
+
+    const fields = { action: 'write', target, data };
+    for (const [name, value] of Object.entries(fields)) {
+      const input = document.createElement('input');
+      input.type  = 'hidden';
+      input.name  = name;
+      input.value = value;
+      form.appendChild(input);
+    }
+
+    document.body.appendChild(form);
+    form.submit();
+    setTimeout(() => { form.remove(); }, 3000);
+    console.log('Drive write submitted:', target, `${Math.round(data.length/1024)}KB`);
   } catch (e) { console.warn('Drive write:', e.message); }
 }
 
