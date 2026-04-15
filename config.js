@@ -2,6 +2,17 @@
 // DigiEDU AI Service Assistant – Konfigurácia v2
 // ============================================================
 
+// Načítaj uložené nastavenia z localStorage
+const _saved = {
+  apiKeyClaude:  localStorage.getItem('digiedu_api_claude')  || '',
+  apiKeyGpt:     localStorage.getItem('digiedu_api_gpt')     || '',
+  apiKeyCustom:  localStorage.getItem('digiedu_api_custom')  || '',
+  endpointCustom:localStorage.getItem('digiedu_endpoint_custom') || '',
+  activeModel:   localStorage.getItem('digiedu_model')       || 'haiku',
+  activeProvider:localStorage.getItem('digiedu_provider')    || 'claude',
+  gasUrl:        localStorage.getItem('digiedu_gas_url')     || ''
+};
+
 const CONFIG = {
 
   // ── API Provideri ─────────────────────────────────────────
@@ -12,24 +23,24 @@ const CONFIG = {
     claude: {
       label:    'Claude (Anthropic)',
       url:      'https://api.anthropic.com/v1/messages',
-      api_key:  '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',
+      api_key:  _saved.apiKeyClaude || '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',
       type:     'claude'
     },
     gpt: {
       label:    'GPT (OpenAI)',
       url:      'https://api.openai.com/v1/chat/completions',
-      api_key:  '',
+      api_key:  _saved.apiKeyGpt || '',
       type:     'openai'
     },
     custom: {
       label:    'Súkromné API',
-      url:      'http://localhost:11434/api/chat',
-      api_key:  '',
+      url:      _saved.endpointCustom || 'http://localhost:11434/api/chat',
+      api_key:  _saved.apiKeyCustom || '',
       type:     'custom'
     }
   },
 
-  ACTIVE_PROVIDER: 'claude',
+  ACTIVE_PROVIDER: _saved.activeProvider || 'claude',
 
   MODELS: {
     haiku: {
@@ -64,11 +75,10 @@ const CONFIG = {
     }
   },
 
-  ACTIVE_MODEL: 'haiku',
+  ACTIVE_MODEL: _saved.activeModel || 'haiku',
   MAX_TOKENS: 4096,
 
-  get API_URL()              { return this.PROVIDERS[this.ACTIVE_PROVIDER].url; },
-  get API_KEY()              { return this.PROVIDERS[this.ACTIVE_PROVIDER].api_key; },
+  // API_URL a API_KEY nie sú potrebné – volania idú cez GAS proxy
   get API_MODEL()            { return this.MODELS[this.ACTIVE_MODEL].id; },
   get PRICE_INPUT_PER_MTOK() { return this.MODELS[this.ACTIVE_MODEL].input; },
   get PRICE_OUTPUT_PER_MTOK(){ return this.MODELS[this.ACTIVE_MODEL].output; },
