@@ -31,31 +31,21 @@ function calcMaxTokens(limitUsd, estimatedInputTokens) {
   return Math.min(Math.max(maxOut, 100), CONFIG.MAX_TOKENS);
 }
 
-// ── AI volanie cez GAS proxy ─────────────────────────────────
-// API kľúč je skrytý v Google Apps Script – nie je v kóde
+// ── AI volanie cez GAS proxy (GET) ───────────────────────────
+// GET nemá CORS preflight problém – kľúč skrytý v Apps Script
 
 async function callClaudeAPI(systemPrompt, userMessage, limitUsd) {
   const estInput  = Math.ceil((systemPrompt.length + userMessage.length) / 3.5);
   const maxTokens = limitUsd ? calcMaxTokens(limitUsd, estInput) : CONFIG.MAX_TOKENS;
 
-  const res = await fetch(DRIVE_CONFIG.GAS_URL, {
-    method: 'POST',
-    headers: { 'Content-Type': 'text/plain' },
-    body: JSON.stringify({
-      action:     'ai_call',
-      model:      CONFIG.API_MODEL,
-      max_tokens: maxTokens,
-      system:     systemPrompt,
-      messages:   [{ role: 'user', content: userMessage }]
-    })
-  });
+  const result = await gasAICall(
+    CONFIG.API_MODEL,
+    maxTokens,
+    systemPrompt,
+    [{ role: 'user', content: userMessage }]
+  );
 
-  if (!res.ok) throw new Error(`GAS proxy error ${res.status}`);
-  const data = await res.json();
-  if (!data.ok) throw new Error(data.error || 'GAS AI call failed');
-
-  const result = data.result;
-  const usage  = result.usage || null;
+  const usage = result.usage || null;
   trackTokens(usage);
   return { text: result.content[0].text, usage, maxTokens };
 }
