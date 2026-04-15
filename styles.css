@@ -1379,3 +1379,23 @@ select#device-select {
   .chat-bubble     { max-width: 94%; }
   .admin-section-wide { grid-column: 1; }
 }
+
+/* ── Admin GAS info box ───────────────────────────────────── */
+.admin-gas-info {
+  background: rgba(16,185,129,0.06);
+  border: 1px solid rgba(16,185,129,0.2);
+  border-radius: 8px;
+  padding: 12px 14px;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--text-muted);
+}
+
+.admin-gas-badge {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--accent-green);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 6px;
+}
